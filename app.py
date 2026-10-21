@@ -28,8 +28,11 @@ def get_secret(name: str) -> str:
         return ""
 
 
+DATA_VERSION = 2  # bump when data.py changes, so Streamlit rebuilds its cached data
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner="Loading NFL history and fitting the model...")
-def load_everything():
+def load_everything(data_version: int = DATA_VERSION):
     games = load_games()
     feat, _ = M.build_features(games)
     oos = M.run_backtest(feat)
@@ -90,7 +93,7 @@ with st.sidebar:
         st.rerun()
 
 try:
-    feat, oos, live_model, sigma = load_everything()
+    feat, oos, live_model, sigma = load_everything(DATA_VERSION)
 except Exception as exc:  # network or schema problems
     st.error(f"Could not load NFL history: {exc}")
     st.stop()
@@ -129,8 +132,8 @@ with tab_slate:
                 if pd.notna(g["roof"]) and g["roof"] in ("dome", "closed"):
                     continue
                 forecast = None
-                if str(g["location"]) != "Neutral":
-                    forecast = get_forecast(g["home_team"], g["kickoff_utc"])
+                if str(g.get("location")) != "Neutral":
+                    forecast = get_forecast(g["home_team"], g.get("kickoff_utc"))
                 if forecast:
                     def_wind, def_temp, src = forecast[0], forecast[1], "forecast"
                 else:
