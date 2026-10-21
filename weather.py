@@ -43,11 +43,22 @@ def parse_forecast(payload: dict, kickoff_utc: pd.Timestamp):
     return float(wind), float(temp)
 
 
-def fetch_game_weather(home_team: str, kickoff_utc: pd.Timestamp):
-    """Forecast (wind_mph, temp_f) at kickoff, or None if unavailable."""
-    coords = STADIUMS.get(home_team)
-    if coords is None or pd.isna(kickoff_utc):
+def fetch_game_weather(home_team: str, kickoff_utc, raise_errors: bool = False):
+    """Forecast (wind_mph, temp_f) at kickoff, or None if unavailable.
+
+    With raise_errors=True, failures raise ValueError with a readable reason
+    (the app uses this so failed lookups are never cached and the cause is visible).
+    """
+    def fail(msg):
+        if raise_errors:
+            raise ValueError(msg)
         return None
+
+    coords = STADIUMS.get(home_team)
+    if coords is None:
+        return fail(f"no stadium coordinates for {home_team}")
+    if kickoff_utc is None or pd.isna(kickoff_utc):
+        return fail("kickoff time missing (is data.py up to date?)")
     try:
         resp = requests.get(
             API_URL,
@@ -60,6 +71,12 @@ def fetch_game_weather(home_team: str, kickoff_utc: pd.Timestamp):
             timeout=15,
         )
         resp.raise_for_status()
-        return parse_forecast(resp.json(), kickoff_utc)
-    except Exception:
+        payload = resp.json()
+    except Exception as exc:
+        if raise_errors:
+            raise ValueError(f"forecast request failed: {exc}") from exc
         return None
+    result = parse_forecast(payload, kickoff_utc)
+    if result is None:
+        return fail("kickoff is outside the forecast window")
+    return result

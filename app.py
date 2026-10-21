@@ -48,7 +48,8 @@ def get_odds(api_key: str):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_forecast(home_team: str, kickoff_utc):
-    return fetch_game_weather(home_team, kickoff_utc)
+    # Raises on failure, and Streamlit does not cache exceptions, so a bad lookup is retried.
+    return fetch_game_weather(home_team, kickoff_utc, raise_errors=True)
 
 
 def edge_verdict(oos: pd.DataFrame):
@@ -131,13 +132,18 @@ with tab_slate:
             for _, g in window.iterrows():
                 if pd.notna(g["roof"]) and g["roof"] in ("dome", "closed"):
                     continue
-                forecast = None
-                if str(g.get("location")) != "Neutral":
-                    forecast = get_forecast(g["home_team"], g.get("kickoff_utc"))
+                forecast, why = None, ""
+                if str(g.get("location")) == "Neutral":
+                    why = "neutral-site game"
+                else:
+                    try:
+                        forecast = get_forecast(g["home_team"], g.get("kickoff_utc"))
+                    except Exception as exc:
+                        why = str(exc)
                 if forecast:
                     def_wind, def_temp, src = forecast[0], forecast[1], "forecast"
                 else:
-                    def_wind, def_temp, src = 5.0, 60.0, "neutral default"
+                    def_wind, def_temp, src = 5.0, 60.0, f"neutral default: {why}"
                 def_wind = float(min(max(round(def_wind), 0), 50))
                 def_temp = float(min(max(round(def_temp), -10), 110))
                 c1, c2, c3 = st.columns([2, 1, 1])
