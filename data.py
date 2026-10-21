@@ -34,7 +34,12 @@ NEEDED = [
     "game_id", "season", "game_type", "week", "gameday",
     "away_team", "away_score", "home_team", "home_score",
     "total_line", "roof", "temp", "wind", "home_rest", "away_rest", "div_game",
+    "gametime", "location",
 ]
+
+# Used only when the data has no roof value for a game (common for upcoming games).
+DEFAULT_ROOF = {t: "dome" for t in
+                ("ARI", "ATL", "DAL", "DET", "HOU", "IND", "LA", "LAC", "LV", "MIN", "NO")}
 
 
 def load_games(source: str = None) -> pd.DataFrame:
@@ -50,5 +55,13 @@ def load_games(source: str = None) -> pd.DataFrame:
     for col in ("season", "week", "home_score", "away_score", "total_line",
                 "temp", "wind", "home_rest", "away_rest", "div_game"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    df["roof"] = df["roof"].astype("string").str.lower()
+    roof = df["roof"].astype("string").str.lower()
+    roof = roof.fillna(df["home_team"].map(DEFAULT_ROOF)).fillna("outdoors")
+    df["roof"] = roof.astype(object)
+
+    # Kickoff as a UTC timestamp (nflverse lists local-to-ET kickoff times).
+    clock = df["gametime"].astype("string").fillna("13:00")
+    local = pd.to_datetime(df["gameday"].dt.strftime("%Y-%m-%d") + " " + clock, errors="coerce")
+    df["kickoff_utc"] = (local.dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT")
+                         .dt.tz_convert("UTC"))
     return df.sort_values(["gameday", "game_id"]).reset_index(drop=True)

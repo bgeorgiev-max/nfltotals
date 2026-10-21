@@ -13,6 +13,7 @@ import streamlit as st
 import model as M
 from data import load_games
 from odds import fetch_totals
+from weather import fetch_game_weather
 
 st.set_page_config(page_title="NFL Totals Edge Finder", page_icon="🏈", layout="wide")
 
@@ -40,6 +41,11 @@ def load_everything():
 @st.cache_data(ttl=1800, show_spinner="Pulling live totals...")
 def get_odds(api_key: str):
     return fetch_totals(api_key)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_forecast(home_team: str, kickoff_utc):
+    return fetch_game_weather(home_team, kickoff_utc)
 
 
 def edge_verdict(oos: pd.DataFrame):
@@ -115,18 +121,28 @@ with tab_slate:
     if window.empty:
         st.info("No upcoming games in the next 8 days (bye week or offseason).")
     else:
-        with st.expander("Weather overrides (outdoor games)"):
-            st.caption("Forecast weather isn't in the data. Enter wind and temperature to update "
-                       "a game's projection. Defaults are neutral (5 mph, 60 F).")
+        with st.expander("Game-time weather (auto-filled, editable)"):
+            st.caption("Wind and temperature come from Open-Meteo forecasts at each stadium, averaged "
+                       "over the game. Domes are skipped. Edit any value to override it. If a forecast "
+                       "isn't available, the default is neutral (5 mph, 60 F).")
             for _, g in window.iterrows():
                 if pd.notna(g["roof"]) and g["roof"] in ("dome", "closed"):
                     continue
+                forecast = None
+                if str(g["location"]) != "Neutral":
+                    forecast = get_forecast(g["home_team"], g["kickoff_utc"])
+                if forecast:
+                    def_wind, def_temp, src = forecast[0], forecast[1], "forecast"
+                else:
+                    def_wind, def_temp, src = 5.0, 60.0, "neutral default"
+                def_wind = float(min(max(round(def_wind), 0), 50))
+                def_temp = float(min(max(round(def_temp), -10), 110))
                 c1, c2, c3 = st.columns([2, 1, 1])
-                c1.write(f'{g["away_team"]} @ {g["home_team"]}')
-                wind = c2.number_input("Wind mph", 0.0, 50.0, float(g["wind"]) if pd.notna(g["wind"]) else 5.0,
-                                       1.0, key=f'w_{g["game_id"]}')
-                temp = c3.number_input("Temp F", -10.0, 110.0, float(g["temp"]) if pd.notna(g["temp"]) else 60.0,
-                                       1.0, key=f't_{g["game_id"]}')
+                c1.write(f'{g["away_team"]} @ {g["home_team"]} ({src})')
+                wind = c2.number_input("Wind mph", 0.0, 50.0, def_wind, 1.0,
+                                       key=f'w_{g["game_id"]}_{def_wind:.0f}')
+                temp = c3.number_input("Temp F", -10.0, 110.0, def_temp, 1.0,
+                                       key=f't_{g["game_id"]}_{def_temp:.0f}')
                 overrides[g["game_id"]] = (wind, temp)
 
         best, detail = M.build_slate(feat, live_model, sigma, odds_df, overrides)
