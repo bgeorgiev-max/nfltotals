@@ -119,7 +119,7 @@ with tab_slate:
             st.caption("Forecast weather isn't in the data. Enter wind and temperature to update "
                        "a game's projection. Defaults are neutral (5 mph, 60 F).")
             for _, g in window.iterrows():
-                if g["roof"] in ("dome", "closed"):
+                if pd.notna(g["roof"]) and g["roof"] in ("dome", "closed"):
                     continue
                 c1, c2, c3 = st.columns([2, 1, 1])
                 c1.write(f'{g["away_team"]} @ {g["home_team"]}')
